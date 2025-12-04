@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Startup Game</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Header Bar -->
+        <header id="header">
+            <div class="header-left">
+                <h1>Startup Game</h1>
+                <span id="project-name" class="project-name"></span>
+            </div>
+            <div class="header-center">
+                <span id="day-display" class="day-badge">Day 1</span>
+                <span id="time-display" class="time-badge">8:00</span>
+                <span id="phase-display" class="phase-badge">Morning</span>
+            </div>
+            <div class="header-right">
+                <a href="#" id="git-link" class="btn btn-small" target="_blank" style="display:none;">
+                    View Git Repo
+                </a>
+                <button id="settings-btn" class="btn btn-small">Settings</button>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main id="main-content">
+            <!-- Setup Screen -->
+            <div id="setup-screen" class="screen">
+                <div class="setup-container">
+                    <h2>Welcome to Startup Game</h2>
+                    <p>You're about to lead a team of AI developers to build your dream app.</p>
+
+                    <div id="setup-step-1" class="setup-step active">
+                        <h3>Step 1: Configure API Keys</h3>
+                        <p>Enter at least one API key to power your AI teammates.</p>
+
+                        <div class="form-group">
+                            <label>Anthropic API Key (for Claude models)</label>
+                            <input type="password" id="setup-anthropic-key" placeholder="sk-ant-...">
+                        </div>
+                        <div class="form-group">
+                            <label>OpenAI API Key (for ChatGPT)</label>
+                            <input type="password" id="setup-openai-key" placeholder="sk-...">
+                        </div>
+                        <div class="form-group">
+                            <label>Google API Key (for Gemini)</label>
+                            <input type="password" id="setup-gemini-key" placeholder="AIza...">
+                        </div>
+
+                        <button id="setup-keys-btn" class="btn btn-primary">Save Keys & Continue</button>
+                    </div>
+
+                    <div id="setup-step-2" class="setup-step">
+                        <h3>Step 2: Describe Your Project</h3>
+                        <p>Tell the Project Manager what you want to build.</p>
+
+                        <div class="form-group">
+                            <label>Project Name</label>
+                            <input type="text" id="setup-project-name" placeholder="My Awesome App">
+                        </div>
+                        <div class="form-group">
+                            <label>Description</label>
+                            <textarea id="setup-project-desc" rows="3" placeholder="A brief description of what you're building..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Vision</label>
+                            <textarea id="setup-project-vision" rows="3" placeholder="What problem does it solve? Who is it for?"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Project Manager Model</label>
+                            <select id="setup-pm-model">
+                                <option value="claude-opus-4.5">Claude Opus 4.5 (Best)</option>
+                                <option value="claude-sonnet-4.5" selected>Claude Sonnet 4.5</option>
+                                <option value="chatgpt-5.1">ChatGPT 5.1</option>
+                                <option value="gemini-3">Gemini 3</option>
+                            </select>
+                        </div>
+
+                        <button id="setup-project-btn" class="btn btn-primary">Create Project</button>
+                    </div>
+
+                    <div id="setup-step-3" class="setup-step">
+                        <h3>Step 3: Build Your Team</h3>
+                        <p>Choose AI models for each team member.</p>
+
+                        <div id="team-config-container"></div>
+
+                        <button id="setup-team-btn" class="btn btn-primary">Generate Team & Start</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Office View -->
+            <div id="office-screen" class="screen" style="display:none;">
+                <div class="office-layout">
+                    <!-- Office Canvas (Top-down view) -->
+                    <div id="office-view">
+                        <canvas id="office-canvas"></canvas>
+
+                        <!-- Action buttons overlay -->
+                        <div id="office-actions">
+                            <button id="standup-btn" class="action-btn">Start Standup</button>
+                            <button id="my-desk-btn" class="action-btn">Go to My Desk</button>
+                            <button id="end-day-btn" class="action-btn">End Day</button>
+                        </div>
+                    </div>
+
+                    <!-- Side Panel -->
+                    <div id="side-panel">
+                        <div class="panel-tabs">
+                            <button class="tab-btn active" data-tab="tasks">Tasks</button>
+                            <button class="tab-btn" data-tab="meetings">Meetings</button>
+                            <button class="tab-btn" data-tab="docs">Docs</button>
+                            <button class="tab-btn" data-tab="git">Git</button>
+                        </div>
+
+                        <div id="tab-tasks" class="tab-content active">
+                            <div id="kanban-mini">
+                                <div class="kanban-column" data-status="todo">
+                                    <h4>To Do</h4>
+                                    <div class="task-list" id="tasks-todo"></div>
+                                </div>
+                                <div class="kanban-column" data-status="in_progress">
+                                    <h4>In Progress</h4>
+                                    <div class="task-list" id="tasks-in-progress"></div>
+                                </div>
+                                <div class="kanban-column" data-status="done">
+                                    <h4>Done</h4>
+                                    <div class="task-list" id="tasks-done"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="tab-meetings" class="tab-content">
+                            <div id="meetings-list"></div>
+                        </div>
+
+                        <div id="tab-docs" class="tab-content">
+                            <div id="docs-list"></div>
+                        </div>
+
+                        <div id="tab-git" class="tab-content">
+                            <div id="git-status"></div>
+                            <div id="pending-merges"></div>
+                            <div id="git-files"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat/Interaction Screen -->
+            <div id="chat-screen" class="screen" style="display:none;">
+                <div class="chat-header">
+                    <button id="chat-back-btn" class="btn btn-small">Back to Office</button>
+                    <div id="chat-title">
+                        <span id="chat-with-name"></span>
+                        <span id="chat-context" class="chat-context"></span>
+                    </div>
+                    <button id="chat-end-btn" class="btn btn-small btn-danger">End Session</button>
+                </div>
+
+                <div id="chat-messages"></div>
+
+                <div id="chat-input-area">
+                    <div id="standup-form" style="display:none;">
+                        <div class="standup-field">
+                            <label>What did you work on yesterday?</label>
+                            <textarea id="standup-yesterday" rows="2"></textarea>
+                        </div>
+                        <div class="standup-field">
+                            <label>What will you work on today?</label>
+                            <textarea id="standup-today" rows="2"></textarea>
+                        </div>
+                        <div class="standup-field">
+                            <label>Any blockers?</label>
+                            <textarea id="standup-blockers" rows="2"></textarea>
+                        </div>
+                        <button id="standup-submit" class="btn btn-primary">Submit Update</button>
+                    </div>
+
+                    <div id="chat-form">
+                        <textarea id="chat-input" placeholder="Type your message..." rows="2"></textarea>
+                        <div class="chat-actions">
+                            <button id="chat-send" class="btn btn-primary">Send</button>
+                            <button id="chat-commit" class="btn btn-secondary" style="display:none;">Commit Changes</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Settings Modal -->
+        <div id="settings-modal" class="modal" style="display:none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Settings</h2>
+                    <button id="settings-close" class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <h3>API Keys</h3>
+                    <div class="form-group">
+                        <label>Anthropic API Key</label>
+                        <input type="password" id="settings-anthropic-key" placeholder="sk-ant-...">
+                        <span id="anthropic-status" class="key-status"></span>
+                    </div>
+                    <div class="form-group">
+                        <label>OpenAI API Key</label>
+                        <input type="password" id="settings-openai-key" placeholder="sk-...">
+                        <span id="openai-status" class="key-status"></span>
+                    </div>
+                    <div class="form-group">
+                        <label>Google API Key</label>
+                        <input type="password" id="settings-gemini-key" placeholder="AIza...">
+                        <span id="gemini-status" class="key-status"></span>
+                    </div>
+
+                    <h3>GitHub Integration</h3>
+                    <div class="form-group">
+                        <label>GitHub Personal Access Token</label>
+                        <input type="password" id="settings-github-token" placeholder="ghp_...">
+                    </div>
+                    <div class="form-group">
+                        <label>Remote Repository URL</label>
+                        <input type="text" id="settings-git-remote" placeholder="https://github.com/user/repo.git">
+                    </div>
+                    <button id="link-github-btn" class="btn btn-secondary">Link Repository</button>
+
+                    <div class="modal-footer">
+                        <button id="save-settings-btn" class="btn btn-primary">Save Settings</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Context Menu for Teammates -->
+        <div id="teammate-menu" class="context-menu" style="display:none;">
+            <button class="menu-item" data-action="talk">Talk</button>
+            <button class="menu-item" data-action="whiteboard">Whiteboard Session</button>
+            <button class="menu-item" data-action="assign">Assign Task</button>
+        </div>
+
+        <!-- Day Report Modal -->
+        <div id="report-modal" class="modal" style="display:none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>End of Day Report</h2>
+                    <button id="report-close" class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="report-content"></div>
+                </div>
+                <div class="modal-footer">
+                    <button id="next-day-btn" class="btn btn-primary">Start Next Day</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Commit Modal -->
+        <div id="commit-modal" class="modal" style="display:none;">
+            <div class="modal-content modal-small">
+                <div class="modal-header">
+                    <h2>Commit Changes</h2>
+                    <button id="commit-close" class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Commit Message</label>
+                        <textarea id="commit-message" rows="3" placeholder="Describe your changes..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="do-commit-btn" class="btn btn-primary">Commit</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Merge Approval Modal -->
+        <div id="merge-modal" class="modal" style="display:none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Approve Merge</h2>
+                    <button id="merge-close" class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="merge-details"></div>
+                </div>
+                <div class="modal-footer">
+                    <button id="approve-merge-btn" class="btn btn-primary">Approve & Merge</button>
+                    <button id="reject-merge-btn" class="btn btn-danger">Reject</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/game.js"></script>
+</body>
+</html>
