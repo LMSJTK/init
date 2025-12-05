@@ -795,3 +795,98 @@ body {
 .teammate-tooltip .status.in_meeting {
     color: var(--accent-primary);
 }
+
+/* Task Detail Modal */
+.task-detail-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.task-detail-row label {
+    width: 120px;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.task-detail-section {
+    margin-bottom: 15px;
+}
+
+.task-detail-section label {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+}
+
+.task-detail-section p {
+    background: var(--bg-primary);
+    padding: 12px;
+    border-radius: 5px;
+    line-height: 1.5;
+}
+
+.task-detail-section select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
+.task-status-badge {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.task-status-badge.status-backlog {
+    background: var(--bg-tertiary);
+}
+
+.task-status-badge.status-todo {
+    background: #3498db;
+}
+
+.task-status-badge.status-in_progress {
+    background: var(--warning);
+    color: #000;
+}
+
+.task-status-badge.status-review {
+    background: #9b59b6;
+}
+
+.task-status-badge.status-done {
+    background: var(--success);
+}
+
+.task-priority-badge {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.task-priority-badge.priority-low {
+    background: var(--bg-tertiary);
+}
+
+.task-priority-badge.priority-medium {
+    background: #3498db;
+}
+
+.task-priority-badge.priority-high {
+    background: var(--warning);
+    color: #000;
+}
+
+.task-priority-badge.priority-critical {
+    background: var(--danger);
+}

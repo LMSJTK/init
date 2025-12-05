@@ -295,6 +295,52 @@
                 </div>
             </div>
         </div>
+
+        <!-- Task Detail Modal -->
+        <div id="task-modal" class="modal" style="display:none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="task-modal-title">Task Details</h2>
+                    <button id="task-close" class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="task-detail-row">
+                        <label>Status:</label>
+                        <span id="task-detail-status" class="task-status-badge"></span>
+                    </div>
+                    <div class="task-detail-row">
+                        <label>Priority:</label>
+                        <span id="task-detail-priority" class="task-priority-badge"></span>
+                    </div>
+                    <div class="task-detail-row">
+                        <label>Type:</label>
+                        <span id="task-detail-type"></span>
+                    </div>
+                    <div class="task-detail-row">
+                        <label>Assigned To:</label>
+                        <span id="task-detail-assignee"></span>
+                    </div>
+                    <div class="task-detail-row">
+                        <label>Estimated Time:</label>
+                        <span id="task-detail-time"></span>
+                    </div>
+                    <div class="task-detail-section">
+                        <label>Description:</label>
+                        <p id="task-detail-description"></p>
+                    </div>
+                    <div class="task-detail-section">
+                        <label>Reassign To:</label>
+                        <select id="task-reassign-select">
+                            <option value="">-- Select Teammate --</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="task-reassign-btn" class="btn btn-secondary">Reassign</button>
+                    <button id="task-move-btn" class="btn btn-primary">Move to Next Status</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="js/game.js"></script>
