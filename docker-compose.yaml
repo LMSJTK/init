@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "8080:80"
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      - db
+    # Create storage folders and make them writable for the game
+    command: sh -c "mkdir -p storage/logs storage/git-repos && chmod -R 777 storage && apache2-foreground"
+
+  db:
+    image: mysql:5.7
+    environment:
+      MYSQL_DATABASE: startup_game
+      MYSQL_USER: startup_game
+      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3306:3306"
