@@ -3,6 +3,9 @@
  * Startup Game - Main Entry Point
  */
 
+// Allow the script to run for 5 minutes (300 seconds) to handle AI delays
+set_time_limit(300);
+
 // Error reporting for development
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
