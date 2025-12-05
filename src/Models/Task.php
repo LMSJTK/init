@@ -23,17 +23,30 @@ class Task extends Model
     }
 
     /**
-     * Get all tasks for kanban board
+     * Get all tasks for kanban board with assignee info
      */
     public static function getKanbanBoard(int $projectId): array
     {
         return [
-            'backlog' => self::getByStatus($projectId, 'backlog'),
-            'todo' => self::getByStatus($projectId, 'todo'),
-            'in_progress' => self::getByStatus($projectId, 'in_progress'),
-            'review' => self::getByStatus($projectId, 'review'),
-            'done' => self::getByStatus($projectId, 'done'),
+            'backlog' => self::getByStatusWithAssignee($projectId, 'backlog'),
+            'todo' => self::getByStatusWithAssignee($projectId, 'todo'),
+            'in_progress' => self::getByStatusWithAssignee($projectId, 'in_progress'),
+            'review' => self::getByStatusWithAssignee($projectId, 'review'),
+            'done' => self::getByStatusWithAssignee($projectId, 'done'),
         ];
+    }
+
+    /**
+     * Get tasks by status with assignee information
+     */
+    public static function getByStatusWithAssignee(int $projectId, string $status): array
+    {
+        $sql = "SELECT t.*, tm.name as assignee_name, tm.avatar_color as assignee_color
+                FROM tasks t
+                LEFT JOIN teammates tm ON t.assigned_to = tm.id
+                WHERE t.project_id = ? AND t.status = ?
+                ORDER BY t.priority DESC, t.created_at ASC";
+        return Database::query($sql, [$projectId, $status]);
     }
 
     /**

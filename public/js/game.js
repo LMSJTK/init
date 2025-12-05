@@ -83,6 +83,11 @@ class StartupGame {
         document.getElementById('merge-close').addEventListener('click', () => this.closeModal('merge-modal'));
         document.getElementById('approve-merge-btn').addEventListener('click', () => this.approveMerge());
 
+        // Task modal
+        document.getElementById('task-close').addEventListener('click', () => this.closeModal('task-modal'));
+        document.getElementById('task-reassign-btn').addEventListener('click', () => this.reassignTask());
+        document.getElementById('task-move-btn').addEventListener('click', () => this.moveTaskToNext());
+
         // Click outside context menu closes it
         document.addEventListener('click', (e) => {
             if (!e.target.closest('#teammate-menu')) {
@@ -1072,8 +1077,86 @@ class StartupGame {
     }
 
     showTaskDetails(task) {
-        // TODO: Implement task detail modal
-        console.log('Task:', task);
+        this.currentTask = task;
+
+        // Populate modal fields
+        document.getElementById('task-modal-title').textContent = task.title;
+        document.getElementById('task-detail-status').textContent = this.formatStatus(task.status);
+        document.getElementById('task-detail-status').className = `task-status-badge status-${task.status}`;
+        document.getElementById('task-detail-priority').textContent = this.capitalize(task.priority);
+        document.getElementById('task-detail-priority').className = `task-priority-badge priority-${task.priority}`;
+        document.getElementById('task-detail-type').textContent = this.capitalize(task.task_type);
+        document.getElementById('task-detail-assignee').textContent = task.assignee_name || 'Unassigned';
+        document.getElementById('task-detail-time').textContent = task.estimated_time ? `${task.estimated_time} min` : 'Not estimated';
+        document.getElementById('task-detail-description').textContent = task.description || 'No description provided.';
+
+        // Populate reassign dropdown with teammates
+        const select = document.getElementById('task-reassign-select');
+        select.innerHTML = '<option value="">-- Select Teammate --</option>';
+        this.teammates.forEach(tm => {
+            if (tm && !tm.is_project_manager && !tm.is_player_assistant) {
+                const option = document.createElement('option');
+                option.value = tm.id;
+                option.textContent = `${tm.name} (${tm.role})`;
+                if (task.assigned_to === tm.id) {
+                    option.selected = true;
+                }
+                select.appendChild(option);
+            }
+        });
+
+        // Show/hide move button based on status
+        const moveBtn = document.getElementById('task-move-btn');
+        if (task.status === 'done') {
+            moveBtn.style.display = 'none';
+        } else {
+            moveBtn.style.display = 'inline-block';
+            const nextStatus = {
+                'backlog': 'To Do',
+                'todo': 'In Progress',
+                'in_progress': 'Review',
+                'review': 'Done'
+            };
+            moveBtn.textContent = `Move to ${nextStatus[task.status] || 'Next'}`;
+        }
+
+        document.getElementById('task-modal').style.display = 'flex';
+    }
+
+    formatStatus(status) {
+        const statusNames = {
+            'backlog': 'Backlog',
+            'todo': 'To Do',
+            'in_progress': 'In Progress',
+            'review': 'Review',
+            'done': 'Done'
+        };
+        return statusNames[status] || status;
+    }
+
+    async reassignTask() {
+        const teammateId = document.getElementById('task-reassign-select').value;
+        if (!teammateId) {
+            alert('Please select a teammate to assign');
+            return;
+        }
+
+        await this.api('/api/task/assign', 'POST', {
+            task_id: this.currentTask.id,
+            teammate_id: parseInt(teammateId)
+        });
+
+        this.closeModal('task-modal');
+        await this.loadTasks();
+    }
+
+    async moveTaskToNext() {
+        await this.api('/api/task/move', 'POST', {
+            task_id: this.currentTask.id
+        });
+
+        this.closeModal('task-modal');
+        await this.loadTasks();
     }
 
     viewDocument(docId) {
