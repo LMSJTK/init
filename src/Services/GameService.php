@@ -338,8 +338,8 @@ class GameService
         }
 
         return [
-            'yesterday' => trim($yesterday) ?: 'Continued work on current tasks.',
-            'today' => trim($today) ?: 'Will continue current work.',
+            'yesterday' => trim($yesterday) ?: 'Reviewing project requirements.',
+            'today' => trim($today) ?: 'Ready for task assignment.',
             'blockers' => trim($blockers) ?: 'None'
         ];
     }
@@ -439,6 +439,7 @@ class GameService
                 'priority' => $task['priority'] ?? 'medium',
                 'status' => 'todo',
                 'recommended_assignee' => $recommendedId,
+                'assigned_to' => $recommendedId, // Auto-assign to recommended teammate
                 'estimated_time' => $task['estimated_time'] ?? 60,
                 'day_created' => $state['current_day']
             ]);
