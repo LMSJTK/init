@@ -10,8 +10,8 @@ return [
         'host' => 'db',
         'port' => 3306,
         'name' => 'startup_game',
-        'user' => 'your_db_user',
-        'password' => 'your_db_password',
+        'user' => 'startup_game',
+        'password' => 'password',
         'charset' => 'utf8mb4',
     ],
 
