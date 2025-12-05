@@ -7,7 +7,7 @@
 return [
     // Database Configuration
     'database' => [
-        'host' => 'localhost',
+        'host' => 'db',
         'port' => 3306,
         'name' => 'startup_game',
         'user' => 'your_db_user',
