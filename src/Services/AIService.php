@@ -7,6 +7,7 @@ namespace StartupGame\Services;
 
 use StartupGame\Models\Setting;
 use StartupGame\Models\ContextChunk;
+use StartupGame\Models\Teammate;
 
 class AIService
 {
@@ -286,6 +287,14 @@ PROMPT;
      */
     public function buildPMPrompt(int $projectId, array $projectData): string
     {
+        // Fetch teammates to provide context to the PM
+        $teammates = Teammate::getTeammates($projectId);
+        $teamContext = "Team Roster:\n";
+        foreach ($teammates as $tm) {
+            $teamContext .= "- {$tm['name']} (Role: {$tm['role']}): {$tm['specialty']}\n";
+        }
+        $teamContext .= "- Player (Role: Technical Co-founder)\n";
+
         return <<<PROMPT
 You are the Project Manager for "{$projectData['name']}".
 
@@ -293,6 +302,8 @@ Project Description: {$projectData['description']}
 Project Vision: {$projectData['vision']}
 Current Phase: {$projectData['current_phase']}
 Phase Progress: {$projectData['phase_progress']}%
+
+{$teamContext}
 
 Your responsibilities:
 1. Keep the project on track toward its goals
@@ -311,7 +322,7 @@ When generating tasks, provide them in this JSON format:
             "description": "Detailed description",
             "type": "feature|bug|refactor|documentation|design|research",
             "priority": "low|medium|high|critical",
-            "recommended_role": "role that best fits this task",
+            "recommended_role": "EXACT role name from the Team Roster above",
             "estimated_time": 60
         }
     ]
