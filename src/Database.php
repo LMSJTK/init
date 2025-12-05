@@ -142,10 +142,13 @@ class Database
             $sql = file_get_contents($file);
 
             try {
+                // Remove SQL comments first
+                $sql = preg_replace('/^--.*$/m', '', $sql);
+                
                 // Split by semicolon for multiple statements
                 $statements = array_filter(
                     array_map('trim', explode(';', $sql)),
-                    fn($s) => !empty($s) && !str_starts_with($s, '--')
+                    fn($s) => !empty($s)
                 );
 
                 foreach ($statements as $statement) {
