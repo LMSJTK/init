@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     title VARCHAR(255),
     day_number INT,
     started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    ended_at TIMESTAMP,
+    ended_at TIMESTAMP NULL,
     summary TEXT,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
@@ -179,7 +179,7 @@ CREATE TABLE IF NOT EXISTS coding_sessions (
     commits JSON,
     status ENUM('active', 'paused', 'completed') DEFAULT 'active',
     started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    ended_at TIMESTAMP,
+    ended_at TIMESTAMP NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
     FOREIGN KEY (teammate_id) REFERENCES teammates(id) ON DELETE CASCADE,
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL,
