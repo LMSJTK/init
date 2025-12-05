@@ -74,8 +74,14 @@ if (str_starts_with($path, '/api/')) {
     $controller = new \StartupGame\Controllers\ApiController($config);
     $response = $controller->handle($method, $path, $data);
 
-    $status = $response['status'] ?? 200;
-    unset($response['status']);
+	$status = $response['status'] ?? 200;
+    
+    // Only treat 'status' as an HTTP code if it is an integer
+    if (is_int($status)) {
+        unset($response['status']);
+    } else {
+        $status = 200;
+    }
 
     http_response_code($status);
     echo json_encode($response);
