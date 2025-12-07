@@ -13,6 +13,13 @@ class StartupGame {
         this.currentMeetingId = null;
         this.chatMode = null; // 'standup', 'one_on_one', 'coding', 'meeting', 'whiteboard'
 
+        // Interactive standup state
+        this.standupState = {
+            teammatesCompleted: [],
+            teammatesRemaining: [],
+            isComplete: false
+        };
+
         this.canvas = null;
         this.ctx = null;
 
@@ -631,12 +638,16 @@ class StartupGame {
         this.currentConversationId = result.conversation_id;
         this.chatMode = 'standup';
 
+        // Reset standup state
+        this.standupState = { teammatesCompleted: [], teammatesRemaining: [], isComplete: false };
+
         this.showScreen('chat-screen');
         this.setupChatHeader('Daily Standup', 'Share your updates with the team');
 
         document.getElementById('standup-form').style.display = 'flex';
         document.getElementById('chat-form').style.display = 'none';
         document.getElementById('chat-messages').innerHTML = '';
+        this.hideStandupNextButton();
     }
 
     async submitStandup() {
@@ -655,29 +666,107 @@ class StartupGame {
             yesterday, today, blockers
         });
 
-        // Show teammate responses
-        if (result.teammate_responses) {
-            for (const response of result.teammate_responses) {
-                const tm = this.teammates.find(t => t && t.id === response.teammate_id);
-                const name = tm ? tm.name : 'Teammate';
-                this.addMessage('bot', `Yesterday: ${response.yesterday}\nToday: ${response.today}\nBlockers: ${response.blockers}`, name);
+        // Handle interactive standup flow
+        this.handleStandupResponse(result);
+    }
+
+    handleStandupResponse(result) {
+        // Check if standup is complete (PM has summarized)
+        if (result.standup_complete) {
+            // Show PM summary
+            if (result.pm_summary) {
+                const pm = this.teammates.find(t => t && t.is_project_manager);
+                this.addMessage('bot', result.pm_summary.summary, pm ? pm.name : 'Project Manager');
             }
+
+            // Show activated sessions info
+            if (result.activated_sessions && result.activated_sessions.length > 0) {
+                const sessionInfo = result.activated_sessions.map(s =>
+                    `${s.teammate.name} started working on: ${s.task.title}`
+                ).join('\n');
+                this.addMessage('system', `🚀 Team activated:\n${sessionInfo}`);
+            }
+
+            // Reset standup state
+            this.standupState = { teammatesCompleted: [], teammatesRemaining: [], isComplete: true };
+
+            // Update game state
+            this.refreshGameState();
+
+            // Show completion UI
+            document.getElementById('chat-form').style.display = 'flex';
+            document.getElementById('chat-input').placeholder = 'Standup complete. Click Back to Office to continue.';
+            document.getElementById('chat-input').disabled = true;
+            document.getElementById('chat-send').style.display = 'none';
+            this.hideStandupNextButton();
+            return;
         }
 
-        // Show PM summary
-        if (result.pm_summary) {
-            const pm = this.teammates.find(t => t && t.is_project_manager);
-            this.addMessage('bot', result.pm_summary.summary, pm ? pm.name : 'Project Manager');
+        // Show current teammate's response
+        if (result.current_teammate && result.current_response) {
+            const name = result.current_teammate.name || 'Teammate';
+            const response = result.current_response;
+            this.addMessage('bot', `Yesterday: ${response.yesterday}\nToday: ${response.today}\nBlockers: ${response.blockers}`, name);
         }
 
-        // Update game state
-        await this.refreshGameState();
+        // Update standup state
+        this.standupState.teammatesCompleted = result.teammates_completed || [];
+        this.standupState.teammatesRemaining = result.teammates_remaining || [];
+        this.standupState.isComplete = false;
 
-        // Show return button
+        // Enable chat for follow-up questions
         document.getElementById('chat-form').style.display = 'flex';
-        document.getElementById('chat-input').placeholder = 'Standup complete. Click Back to Office to continue.';
-        document.getElementById('chat-input').disabled = true;
-        document.getElementById('chat-send').style.display = 'none';
+        document.getElementById('chat-input').disabled = false;
+        document.getElementById('chat-send').style.display = 'inline-block';
+
+        if (this.standupState.teammatesRemaining.length > 0) {
+            document.getElementById('chat-input').placeholder = 'Ask a follow-up question, or click Next for the next teammate...';
+            this.showStandupNextButton();
+        } else {
+            document.getElementById('chat-input').placeholder = 'Ask a follow-up question, or click Next to wrap up...';
+            this.showStandupNextButton();
+        }
+    }
+
+    showStandupNextButton() {
+        let nextBtn = document.getElementById('standup-next-btn');
+        if (!nextBtn) {
+            nextBtn = document.createElement('button');
+            nextBtn.id = 'standup-next-btn';
+            nextBtn.className = 'btn btn-primary';
+            nextBtn.textContent = 'Next →';
+            nextBtn.onclick = () => this.nextStandupResponse();
+            document.getElementById('chat-form').appendChild(nextBtn);
+        }
+        nextBtn.style.display = 'inline-block';
+    }
+
+    hideStandupNextButton() {
+        const nextBtn = document.getElementById('standup-next-btn');
+        if (nextBtn) {
+            nextBtn.style.display = 'none';
+        }
+    }
+
+    async nextStandupResponse() {
+        // If no more teammates, complete the standup
+        if (this.standupState.teammatesRemaining.length === 0) {
+            const result = await this.api('/api/standup/complete', 'POST', {
+                project_id: this.projectId,
+                conversation_id: this.currentConversationId
+            });
+            this.handleStandupResponse(result);
+            return;
+        }
+
+        // Get next teammate's response
+        const result = await this.api('/api/standup/next', 'POST', {
+            project_id: this.projectId,
+            conversation_id: this.currentConversationId,
+            teammates_completed: this.standupState.teammatesCompleted
+        });
+
+        this.handleStandupResponse(result);
     }
 
     // ==================== One-on-One ====================
@@ -803,6 +892,15 @@ class StartupGame {
 
         let endpoint, data;
         switch (this.chatMode) {
+            case 'standup':
+                endpoint = '/api/standup/message';
+                data = {
+                    project_id: this.projectId,
+                    conversation_id: this.currentConversationId,
+                    message,
+                    teammates_completed: this.standupState.teammatesCompleted
+                };
+                break;
             case 'one_on_one':
                 endpoint = '/api/conversation/one-on-one/message';
                 data = {
@@ -844,7 +942,7 @@ class StartupGame {
         const result = await this.api(endpoint, 'POST', data);
 
         if (result.response) {
-            const speaker = result.speaker || result.teammate;
+            const speaker = result.responder || result.speaker || result.teammate;
             this.addMessage('bot', result.response, speaker ? speaker.name : 'Assistant');
         }
 
