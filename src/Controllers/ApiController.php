@@ -48,9 +48,12 @@ class ApiController
                 $path === '/api/game/day/start' && $method === 'POST' => $this->startDay($data),
                 $path === '/api/game/day/end' && $method === 'POST' => $this->endDay($data),
 
-                // Standup endpoints
+                // Standup endpoints (interactive flow)
                 $path === '/api/standup/start' && $method === 'POST' => $this->startStandup($data),
                 $path === '/api/standup/update' && $method === 'POST' => $this->submitStandupUpdate($data),
+                $path === '/api/standup/next' && $method === 'POST' => $this->getNextStandupResponse($data),
+                $path === '/api/standup/message' && $method === 'POST' => $this->sendStandupMessage($data),
+                $path === '/api/standup/complete' && $method === 'POST' => $this->completeStandup($data),
 
                 // Conversation endpoints
                 $path === '/api/conversation/one-on-one/start' && $method === 'POST' => $this->startOneOnOne($data),
@@ -206,6 +209,36 @@ class ApiController
             $data['yesterday'] ?? '',
             $data['today'] ?? '',
             $data['blockers'] ?? ''
+        );
+    }
+
+    private function getNextStandupResponse(array $data): array
+    {
+        $projectId = $data['project_id'] ?? Project::getActive()['id'] ?? 0;
+        return $this->game->getNextStandupResponse(
+            $projectId,
+            $data['conversation_id'],
+            $data['teammates_completed'] ?? []
+        );
+    }
+
+    private function sendStandupMessage(array $data): array
+    {
+        $projectId = $data['project_id'] ?? Project::getActive()['id'] ?? 0;
+        return $this->game->sendStandupMessage(
+            $projectId,
+            $data['conversation_id'],
+            $data['message'] ?? '',
+            $data['teammates_completed'] ?? []
+        );
+    }
+
+    private function completeStandup(array $data): array
+    {
+        $projectId = $data['project_id'] ?? Project::getActive()['id'] ?? 0;
+        return $this->game->completeStandup(
+            $projectId,
+            $data['conversation_id']
         );
     }
 
