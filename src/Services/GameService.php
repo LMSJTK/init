@@ -264,10 +264,14 @@ class GameService
         GameState::completeStandup($projectId);
         GameState::consumeTime($projectId, $this->config['game']['standup_duration']);
 
+        // Activate teammates to start working on their assigned tasks
+        $activatedSessions = $this->activateTeammatesForWork($projectId);
+
         return [
             'teammate_responses' => $responses,
             'pm_summary' => $pmSummary,
-            'new_tasks' => $pmSummary['tasks'] ?? []
+            'new_tasks' => $pmSummary['tasks'] ?? [],
+            'activated_sessions' => $activatedSessions
         ];
     }
 
@@ -443,6 +447,11 @@ class GameService
                 'estimated_time' => $task['estimated_time'] ?? 60,
                 'day_created' => $state['current_day']
             ]);
+
+            // Actually assign the task to the teammate so they know to work on it
+            if ($recommendedId) {
+                Teammate::assignTask($recommendedId, $taskId);
+            }
 
             $createdTasks[] = Task::find($taskId);
         }
@@ -1024,5 +1033,242 @@ class GameService
         }
 
         return $doc;
+    }
+
+    /**
+     * Activate teammates to start working on their assigned tasks
+     * This is called after standup or can be triggered manually
+     */
+    public function activateTeammatesForWork(int $projectId): array
+    {
+        $teammates = Teammate::getTeammates($projectId);
+        $activatedSessions = [];
+
+        foreach ($teammates as $teammate) {
+            // Skip if teammate has no assigned task
+            if (!$teammate['current_task_id']) {
+                continue;
+            }
+
+            // Skip if teammate already has an active coding session
+            $activeSession = CodingSession::getActive($teammate['id']);
+            if ($activeSession) {
+                continue;
+            }
+
+            // Get the assigned task
+            $task = Task::find($teammate['current_task_id']);
+            if (!$task || $task['status'] === 'done') {
+                continue;
+            }
+
+            // Start autonomous coding session for this teammate
+            $session = $this->startAutonomousCodingSession($projectId, $teammate, $task);
+            if ($session) {
+                $activatedSessions[] = $session;
+
+                // Move task to in_progress
+                if ($task['status'] === 'todo') {
+                    Task::update($task['id'], ['status' => 'in_progress']);
+                }
+            }
+        }
+
+        return $activatedSessions;
+    }
+
+    /**
+     * Start an autonomous coding session for a teammate
+     * The teammate works independently on their task
+     */
+    private function startAutonomousCodingSession(int $projectId, array $teammate, array $task): ?array
+    {
+        $state = GameState::getForProject($projectId);
+        $project = Project::find($projectId);
+
+        // Create conversation for the autonomous session
+        $conversationId = Conversation::start(
+            $projectId,
+            'autonomous_coding',
+            "{$teammate['name']} working on: {$task['title']}",
+            $state['current_day']
+        );
+
+        // Create branch if needed
+        $branchName = $task['branch_name'] ?? null;
+        if (!$branchName) {
+            $branchName = 'feature/' . preg_replace('/[^a-z0-9]+/', '-', strtolower($task['title']));
+            $branchName = trim($branchName, '-');
+            Task::update($task['id'], ['branch_name' => $branchName]);
+        }
+        $this->git->createBranch($projectId, $branchName);
+
+        // Start coding session
+        $sessionId = CodingSession::start(
+            $projectId,
+            $teammate['id'],
+            $conversationId,
+            $task['id'],
+            $branchName
+        );
+
+        Teammate::setStatus($teammate['id'], 'coding');
+
+        // Generate the autonomous work - teammate works on the task independently
+        $workResult = $this->executeAutonomousWork($projectId, $teammate, $task, $sessionId, $conversationId);
+
+        return [
+            'session_id' => $sessionId,
+            'conversation_id' => $conversationId,
+            'teammate' => $teammate,
+            'task' => $task,
+            'branch' => $branchName,
+            'work_result' => $workResult
+        ];
+    }
+
+    /**
+     * Execute autonomous work for a teammate
+     * The teammate AI generates code and commits it
+     */
+    private function executeAutonomousWork(
+        int $projectId,
+        array $teammate,
+        array $task,
+        int $sessionId,
+        int $conversationId
+    ): array {
+        $project = Project::find($projectId);
+
+        // Get current files in repo for context
+        $repoFiles = $this->git->listFiles($projectId);
+        $fileList = json_encode(array_column($repoFiles, 'path'));
+
+        // Build the work prompt for the teammate
+        $prompt = $this->ai->buildBotPrompt($projectId, $teammate, 'autonomous_coding');
+
+        $workInstruction = "You are working autonomously on your assigned task.\n\n" .
+            "TASK: {$task['title']}\n" .
+            "DESCRIPTION: {$task['description']}\n" .
+            "TYPE: {$task['task_type']}\n" .
+            "PRIORITY: {$task['priority']}\n\n" .
+            "PROJECT: {$project['name']}\n" .
+            "VISION: {$project['vision']}\n\n" .
+            "Current files in repository: $fileList\n\n" .
+            "Please implement this task. Write the code needed to complete it. " .
+            "Format your code in code blocks with the filename, like:\n" .
+            "```src/components/MyComponent.js\n// code here\n```\n\n" .
+            "After writing the code, provide a brief commit message for your changes.";
+
+        $messages = [
+            ['role' => 'user', 'content' => $workInstruction]
+        ];
+
+        // Record the task assignment in the conversation
+        Message::add($conversationId, 'system', "Autonomous session started. Working on: {$task['title']}");
+
+        // Get AI response with the implementation
+        $response = $this->ai->chat($teammate['ai_model'], $messages, $prompt);
+        $content = $response['content'] ?? '';
+
+        // Record the work done
+        Message::add($conversationId, 'bot', $content, $teammate['id'], 'code');
+
+        // Process code blocks and write files
+        $filesWritten = $this->processCodeBlocks($projectId, $sessionId, $content);
+
+        // Extract commit message from response or generate one
+        $commitMessage = $this->extractCommitMessage($content, $task);
+
+        // If files were written, commit them
+        $commitResult = null;
+        if (!empty($filesWritten)) {
+            $commitResult = $this->commitCodingSession($projectId, $sessionId, $commitMessage);
+
+            // Add completion message
+            Message::add($conversationId, 'system',
+                "Committed " . count($filesWritten) . " file(s): " . implode(', ', $filesWritten));
+        }
+
+        // End the coding session
+        $this->endAutonomousCodingSession($projectId, $sessionId, $conversationId, $teammate['id']);
+
+        return [
+            'files_written' => $filesWritten,
+            'commit' => $commitResult,
+            'response' => $content
+        ];
+    }
+
+    /**
+     * Extract commit message from AI response or generate a default one
+     */
+    private function extractCommitMessage(string $content, array $task): string
+    {
+        // Look for explicit commit message in response
+        if (preg_match('/commit\s*message[:\s]+["\']?(.+?)["\']?\s*$/mi', $content, $matches)) {
+            return trim($matches[1]);
+        }
+
+        // Generate default commit message based on task
+        $type = $task['task_type'] ?? 'feat';
+        $typeMap = [
+            'feature' => 'feat',
+            'bug' => 'fix',
+            'enhancement' => 'improve',
+            'refactor' => 'refactor',
+            'test' => 'test',
+            'docs' => 'docs'
+        ];
+        $prefix = $typeMap[$type] ?? 'feat';
+
+        return "$prefix: {$task['title']}";
+    }
+
+    /**
+     * End autonomous coding session
+     */
+    private function endAutonomousCodingSession(
+        int $projectId,
+        int $sessionId,
+        int $conversationId,
+        int $teammateId
+    ): void {
+        // Get the session to find the task
+        $session = CodingSession::find($sessionId);
+
+        // Mark teammate as available again
+        Teammate::setStatus($teammateId, 'available');
+
+        // Clear their current task since work is done
+        Teammate::update($teammateId, ['current_task_id' => null]);
+
+        // Mark the task as done (moved to review for player approval)
+        if ($session && $session['task_id']) {
+            Task::update($session['task_id'], ['status' => 'review']);
+        }
+
+        // End the session
+        CodingSession::end($sessionId);
+
+        // Generate and store summary
+        $conversation = Conversation::getWithMessages($conversationId);
+        $summary = $this->generateConversationSummary($conversation['messages']);
+        Conversation::end($conversationId, $summary);
+
+        // Add to context
+        ContextChunk::addChunk($projectId, 'code', "Autonomous work: $summary");
+
+        // Consume time for the session
+        GameState::consumeTime($projectId, $this->config['game']['coding_session_cost'] ?? 30);
+    }
+
+    /**
+     * Check for idle teammates with tasks and activate them
+     * Can be called periodically or on-demand
+     */
+    public function checkAndActivateIdleTeammates(int $projectId): array
+    {
+        return $this->activateTeammatesForWork($projectId);
     }
 }
