@@ -1312,7 +1312,7 @@ class GameService
             $branchName
         );
 
-        Teammate::setStatus($teammate['id'], 'coding');
+        Teammate::setStatus($teammate['id'], 'busy');
 
         // Generate the autonomous work - teammate works on the task independently
         $workResult = $this->executeAutonomousWork($projectId, $teammate, $task, $sessionId, $conversationId);
