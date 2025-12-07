@@ -80,6 +80,9 @@ class ApiController
                 $path === '/api/task/assign' && $method === 'POST' => $this->assignTask($data),
                 $path === '/api/task/move' && $method === 'POST' => $this->moveTask($data),
 
+                // Team work activation endpoints
+                $path === '/api/team/activate' && $method === 'POST' => $this->activateTeamWork($data),
+
                 // Git endpoints
                 $path === '/api/git/status' && $method === 'GET' => $this->getGitStatus($data),
                 $path === '/api/git/branches' && $method === 'GET' => $this->getGitBranches($data),
@@ -364,6 +367,30 @@ class ApiController
     {
         $task = Task::moveToNextStatus($data['task_id']);
         return ['task' => $task];
+    }
+
+    // ========== Team Work Activation Methods ==========
+
+    /**
+     * Activate teammates to work on their assigned tasks
+     * This triggers autonomous coding sessions for teammates with pending tasks
+     */
+    private function activateTeamWork(array $data): array
+    {
+        $projectId = $data['project_id'] ?? Project::getActive()['id'] ?? 0;
+        $activatedSessions = $this->game->checkAndActivateIdleTeammates($projectId);
+        return [
+            'success' => true,
+            'activated_count' => count($activatedSessions),
+            'sessions' => array_map(function($session) {
+                return [
+                    'teammate' => $session['teammate']['name'] ?? 'Unknown',
+                    'task' => $session['task']['title'] ?? 'Unknown',
+                    'branch' => $session['branch'] ?? null,
+                    'files_written' => $session['work_result']['files_written'] ?? []
+                ];
+            }, $activatedSessions)
+        ];
     }
 
     // ========== Git Methods ==========
