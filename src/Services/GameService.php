@@ -205,7 +205,8 @@ class GameService
     }
 
     /**
-     * Process standup update and generate teammate responses
+     * Process standup update - records player update and returns first teammate's response
+     * Standup is now interactive: each teammate responds individually with opportunity for discussion
      */
     public function processStandupUpdate(
         int $projectId,
@@ -229,31 +230,230 @@ class GameService
 
         // Get all teammates (excluding PM and assistant)
         $teammates = Teammate::getTeammates($projectId);
+
+        if (empty($teammates)) {
+            // No teammates, go straight to PM summary
+            return $this->completeStandup($projectId, $conversationId);
+        }
+
+        // Get first teammate's response
+        $firstTeammate = $teammates[0];
+        $response = $this->generateStandupResponse($projectId, $firstTeammate, $state['current_day']);
+
+        StandupUpdate::recordTeammate(
+            $projectId,
+            $state['current_day'],
+            $firstTeammate['id'],
+            $response['yesterday'],
+            $response['today'],
+            $response['blockers']
+        );
+
+        Message::add(
+            $conversationId,
+            'bot',
+            "Yesterday: {$response['yesterday']}\nToday: {$response['today']}\nBlockers: {$response['blockers']}",
+            $firstTeammate['id']
+        );
+
+        // Return state for interactive flow
+        $remainingTeammates = array_slice($teammates, 1);
+        return [
+            'current_teammate' => $firstTeammate,
+            'current_response' => $response,
+            'teammates_remaining' => array_column($remainingTeammates, 'id'),
+            'teammates_completed' => [$firstTeammate['id']],
+            'standup_complete' => false
+        ];
+    }
+
+    /**
+     * Get next teammate's standup response
+     */
+    public function getNextStandupResponse(
+        int $projectId,
+        int $conversationId,
+        array $teammatesCompleted
+    ): array {
+        $state = GameState::getForProject($projectId);
+        $teammates = Teammate::getTeammates($projectId);
+
+        // Find next teammate who hasn't given update
+        $nextTeammate = null;
+        foreach ($teammates as $teammate) {
+            if (!in_array($teammate['id'], $teammatesCompleted)) {
+                $nextTeammate = $teammate;
+                break;
+            }
+        }
+
+        // If no more teammates, complete the standup
+        if (!$nextTeammate) {
+            return $this->completeStandup($projectId, $conversationId);
+        }
+
+        // Generate this teammate's response
+        $response = $this->generateStandupResponse($projectId, $nextTeammate, $state['current_day']);
+
+        StandupUpdate::recordTeammate(
+            $projectId,
+            $state['current_day'],
+            $nextTeammate['id'],
+            $response['yesterday'],
+            $response['today'],
+            $response['blockers']
+        );
+
+        Message::add(
+            $conversationId,
+            'bot',
+            "Yesterday: {$response['yesterday']}\nToday: {$response['today']}\nBlockers: {$response['blockers']}",
+            $nextTeammate['id']
+        );
+
+        // Update completed list
+        $teammatesCompleted[] = $nextTeammate['id'];
+
+        // Check remaining
+        $remaining = [];
+        foreach ($teammates as $teammate) {
+            if (!in_array($teammate['id'], $teammatesCompleted)) {
+                $remaining[] = $teammate['id'];
+            }
+        }
+
+        return [
+            'current_teammate' => $nextTeammate,
+            'current_response' => $response,
+            'teammates_remaining' => $remaining,
+            'teammates_completed' => $teammatesCompleted,
+            'standup_complete' => false
+        ];
+    }
+
+    /**
+     * Send a message during standup - allows player to ask questions
+     * Relevant teammates can respond if they have information
+     */
+    public function sendStandupMessage(
+        int $projectId,
+        int $conversationId,
+        string $message,
+        array $teammatesCompleted
+    ): array {
+        $state = GameState::getForProject($projectId);
+        $teammates = Teammate::getTeammates($projectId);
         $pm = Teammate::getProjectManager($projectId);
 
-        $responses = [];
+        // Add player message
+        Message::add($conversationId, 'player', $message);
 
-        // Generate updates for each teammate
-        foreach ($teammates as $teammate) {
-            $response = $this->generateStandupResponse($projectId, $teammate, $state['current_day']);
-            $responses[] = $response;
+        // Get conversation history for context
+        $history = Message::getForConversation($conversationId);
 
-            StandupUpdate::recordTeammate(
-                $projectId,
-                $state['current_day'],
-                $teammate['id'],
-                $response['yesterday'],
-                $response['today'],
-                $response['blockers']
-            );
+        // Determine who should respond based on message content and relevance
+        $responder = $this->determineStandupResponder($message, $teammates, $pm, $history);
 
-            Message::add(
-                $conversationId,
-                'bot',
-                "Yesterday: {$response['yesterday']}\nToday: {$response['today']}\nBlockers: {$response['blockers']}",
-                $teammate['id']
-            );
+        // Generate response from the appropriate teammate
+        $prompt = $responder['is_project_manager']
+            ? $this->ai->buildPMPrompt($projectId, Project::find($projectId))
+            : $this->ai->buildBotPrompt($projectId, $responder, 'standup');
+
+        // Build context from recent messages
+        $aiMessages = [];
+        foreach (array_slice($history, -8) as $msg) {
+            $aiMessages[] = [
+                'role' => $msg['sender_type'] === 'player' ? 'user' : 'assistant',
+                'content' => "[{$msg['sender_name']}]: {$msg['content']}"
+            ];
         }
+        $aiMessages[] = ['role' => 'user', 'content' => $message];
+
+        $response = $this->ai->chat($responder['ai_model'], $aiMessages, $prompt);
+        $responseContent = $response['content'] ?? "I don't have specific information about that.";
+
+        Message::add($conversationId, 'bot', $responseContent, $responder['id']);
+
+        // Check remaining teammates
+        $remaining = [];
+        foreach ($teammates as $teammate) {
+            if (!in_array($teammate['id'], $teammatesCompleted)) {
+                $remaining[] = $teammate['id'];
+            }
+        }
+
+        return [
+            'responder' => $responder,
+            'response' => $responseContent,
+            'teammates_remaining' => $remaining,
+            'teammates_completed' => $teammatesCompleted,
+            'standup_complete' => false
+        ];
+    }
+
+    /**
+     * Determine which teammate should respond to a standup question
+     */
+    private function determineStandupResponder(string $message, array $teammates, array $pm, array $history): array
+    {
+        $scores = [];
+        $messageLower = strtolower($message);
+
+        // Score PM
+        $pmScore = 1.0;
+        if (preg_match('/(timeline|schedule|priority|assign|deadline|task|plan|project)/i', $message)) {
+            $pmScore += 3.0;
+        }
+        $scores[$pm['id']] = $pmScore;
+
+        // Score each teammate
+        foreach ($teammates as $teammate) {
+            $score = 1.0;
+
+            // Name mentioned?
+            if (stripos($message, $teammate['name']) !== false) {
+                $score += 5.0;
+            }
+
+            // Role/specialty relevance
+            $specialty = strtolower($teammate['specialty'] ?? '');
+            $role = strtolower($teammate['role'] ?? '');
+            $keywords = array_merge(
+                explode(' ', $specialty),
+                explode(' ', $role)
+            );
+
+            foreach ($keywords as $word) {
+                if (strlen($word) > 3 && stripos($messageLower, $word) !== false) {
+                    $score += 1.5;
+                }
+            }
+
+            $scores[$teammate['id']] = $score;
+        }
+
+        // Find highest scorer
+        $bestId = array_keys($scores, max($scores))[0];
+
+        if ($bestId === $pm['id']) {
+            return $pm;
+        }
+
+        foreach ($teammates as $teammate) {
+            if ($teammate['id'] === $bestId) {
+                return $teammate;
+            }
+        }
+
+        return $pm; // Fallback
+    }
+
+    /**
+     * Complete the standup - PM summarizes and activates teammates
+     */
+    public function completeStandup(int $projectId, int $conversationId): array
+    {
+        $pm = Teammate::getProjectManager($projectId);
 
         // PM summarizes and generates tasks
         $pmSummary = $this->generatePMStandupSummary($projectId, $pm, $conversationId);
@@ -268,10 +468,10 @@ class GameService
         $activatedSessions = $this->activateTeammatesForWork($projectId);
 
         return [
-            'teammate_responses' => $responses,
             'pm_summary' => $pmSummary,
             'new_tasks' => $pmSummary['tasks'] ?? [],
-            'activated_sessions' => $activatedSessions
+            'activated_sessions' => $activatedSessions,
+            'standup_complete' => true
         ];
     }
 
@@ -1089,7 +1289,7 @@ class GameService
         // Create conversation for the autonomous session
         $conversationId = Conversation::start(
             $projectId,
-            'autonomous_coding',
+            'coding_session',
             "{$teammate['name']} working on: {$task['title']}",
             $state['current_day']
         );
@@ -1145,7 +1345,7 @@ class GameService
         $fileList = json_encode(array_column($repoFiles, 'path'));
 
         // Build the work prompt for the teammate
-        $prompt = $this->ai->buildBotPrompt($projectId, $teammate, 'autonomous_coding');
+        $prompt = $this->ai->buildBotPrompt($projectId, $teammate, 'coding_session');
 
         $workInstruction = "You are working autonomously on your assigned task.\n\n" .
             "TASK: {$task['title']}\n" .
