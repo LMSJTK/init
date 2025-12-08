@@ -1083,7 +1083,11 @@ class StartupGame {
         this.closeModal('merge-modal');
 
         if (result.success) {
-            alert('Merge successful!');
+            if (result.push_warning) {
+                alert('Merge successful locally!\n\nWarning: ' + result.push_warning + '\n\nYou may need to configure your GitHub token in Settings.');
+            } else {
+                alert('Merge successful and pushed to remote!');
+            }
             this.loadGitStatus();
         } else {
             alert('Merge failed: ' + result.error);

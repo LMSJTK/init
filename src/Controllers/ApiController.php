@@ -465,8 +465,18 @@ class ApiController
         // Then merge
         $result = $this->git->mergeBranch($projectId, $data['branch']);
 
-        if ($result['success'] && isset($data['commit_id'])) {
-            GitCommit::markMerged($data['commit_id']);
+        if ($result['success']) {
+            // Push to remote after successful merge
+            $pushResult = $this->git->push($projectId, $this->config['git']['default_branch']);
+
+            // If push fails, add warning to result
+            if (!$pushResult['success']) {
+                $result['push_warning'] = 'Merged locally but failed to push to remote: ' . ($pushResult['error'] ?? 'Unknown error');
+            }
+
+            if (isset($data['commit_id'])) {
+                GitCommit::markMerged($data['commit_id']);
+            }
         }
 
         return $result;
