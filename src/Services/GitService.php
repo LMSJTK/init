@@ -52,6 +52,10 @@ class GitService
         $this->runGit($repoPath, 'add .');
         $this->runGit($repoPath, 'commit -m "Initial commit"');
 
+        // Rename branch to match config (git init creates 'master' by default in older versions)
+        $defaultBranch = $this->config['git']['default_branch'];
+        $this->runGit($repoPath, "branch -M $defaultBranch");
+
         return [
             'success' => true,
             'path' => $repoPath
@@ -255,8 +259,17 @@ class GitService
         $repoPath = $this->getRepoPath($projectId);
         $mainBranch = $this->config['git']['default_branch'];
 
+        // Ensure main branch exists (handle legacy projects with master branch)
+        $this->ensureMainBranchExists($repoPath, $mainBranch);
+
         // Checkout main
-        $this->runGit($repoPath, "checkout $mainBranch");
+        $checkoutResult = $this->runGit($repoPath, "checkout $mainBranch");
+        if (!$checkoutResult['success']) {
+            return [
+                'success' => false,
+                'error' => "Failed to checkout $mainBranch: " . ($checkoutResult['error'] ?? 'Unknown error')
+            ];
+        }
 
         // Merge
         $result = $this->runGit($repoPath, "merge $branchName --no-ff -m \"Merge branch '$branchName'\"");
@@ -274,6 +287,35 @@ class GitService
             'success' => true,
             'message' => "Successfully merged $branchName into $mainBranch"
         ];
+    }
+
+    /**
+     * Ensure the main branch exists, renaming master if needed
+     */
+    private function ensureMainBranchExists(string $repoPath, string $mainBranch): void
+    {
+        // Get current branch
+        $branchResult = $this->runGit($repoPath, 'branch --show-current');
+        $currentBranch = trim($branchResult['output']);
+
+        // If we're on master and need main, rename it
+        if ($currentBranch === 'master' && $mainBranch === 'main') {
+            $this->runGit($repoPath, 'branch -M main');
+        }
+
+        // If main doesn't exist but master does, rename master to main
+        $branchesResult = $this->runGit($repoPath, 'branch --list');
+        $branches = array_map('trim', explode("\n", $branchesResult['output']));
+        $branches = array_map(function($b) { return str_replace('* ', '', $b); }, $branches);
+
+        $hasMain = in_array($mainBranch, $branches);
+        $hasMaster = in_array('master', $branches);
+
+        if (!$hasMain && $hasMaster && $mainBranch === 'main') {
+            // Checkout master first, then rename to main
+            $this->runGit($repoPath, 'checkout master');
+            $this->runGit($repoPath, 'branch -M main');
+        }
     }
 
     /**
@@ -314,7 +356,46 @@ class GitService
         $repoPath = $this->getRepoPath($projectId);
         $branch = $branch ?? $this->config['git']['default_branch'];
 
+        // Check if we need to update the remote URL with authentication token
+        $this->ensureRemoteHasAuth($repoPath);
+
         return $this->runGit($repoPath, "push -u origin $branch");
+    }
+
+    /**
+     * Ensure the remote URL has authentication credentials
+     * This handles cases where the remote was linked before token embedding was implemented
+     */
+    private function ensureRemoteHasAuth(string $repoPath): void
+    {
+        // Get current remote URL
+        $result = $this->runGit($repoPath, 'remote get-url origin 2>/dev/null');
+        $currentUrl = trim($result['output']);
+
+        if (empty($currentUrl)) {
+            return; // No remote configured
+        }
+
+        // If URL already has credentials, skip
+        if (strpos($currentUrl, '@') !== false) {
+            return;
+        }
+
+        // If it's a GitHub URL without credentials, inject token
+        if (strpos($currentUrl, 'github.com') !== false) {
+            $githubToken = Setting::get('github_token');
+            if (!empty($githubToken)) {
+                // Inject token into URL
+                $newUrl = preg_replace(
+                    '/^(https?:\/\/)/',
+                    '$1' . $githubToken . '@',
+                    $currentUrl
+                );
+
+                // Update the remote URL
+                $this->runGit($repoPath, "remote set-url origin $newUrl");
+            }
+        }
     }
 
     /**
