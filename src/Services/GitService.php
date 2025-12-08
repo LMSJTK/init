@@ -283,6 +283,19 @@ class GitService
     {
         $repoPath = $this->getRepoPath($projectId);
 
+        // Embed GitHub token in URL if available and not already present
+        if (strpos($remoteUrl, '@') === false && strpos($remoteUrl, 'github.com') !== false) {
+            $githubToken = Setting::get('github_token');
+            if (!empty($githubToken)) {
+                // Convert https://github.com/user/repo.git to https://TOKEN@github.com/user/repo.git
+                $remoteUrl = preg_replace(
+                    '/^(https?:\/\/)/',
+                    '$1' . $githubToken . '@',
+                    $remoteUrl
+                );
+            }
+        }
+
         // Check if remote exists
         $existingRemote = $this->runGit($repoPath, 'remote get-url origin 2>/dev/null');
 
@@ -362,12 +375,32 @@ class GitService
      */
     private function runGit(string $repoPath, string $command): array
     {
-        $fullCommand = "cd " . escapeshellarg($repoPath) . " && git $command 2>&1";
+        $fullCommand = "cd " . escapeshellarg($repoPath) . " && git $command 2>&1; echo \"__EXIT_CODE__:$?\"";
         $output = shell_exec($fullCommand);
 
+        // Extract exit code from output
+        $exitCode = 0;
+        if (preg_match('/__EXIT_CODE__:(\d+)$/', $output, $matches)) {
+            $exitCode = (int)$matches[1];
+            $output = preg_replace('/__EXIT_CODE__:\d+$/', '', $output);
+        }
+
+        $success = ($exitCode === 0);
+        $error = null;
+
+        // Parse common git errors
+        if (!$success) {
+            if (strpos($output, 'fatal:') !== false || strpos($output, 'error:') !== false) {
+                $error = trim($output);
+            } else {
+                $error = "Git command failed with exit code $exitCode";
+            }
+        }
+
         return [
-            'success' => true, // Simplified - in production check exit code
-            'output' => $output ?? ''
+            'success' => $success,
+            'output' => trim($output),
+            'error' => $error
         ];
     }
 }
